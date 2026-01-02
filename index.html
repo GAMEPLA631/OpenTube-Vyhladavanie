@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenTub: Vlastný YouTube Prehrávač</title>
+    <!-- Načítanie Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #000;
+            color: #e5e7eb;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .search-container {
+            max-width: 800px;
+            width: 90%;
+            margin-top: 5vh;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .search-input {
+            background-color: #111;
+            border: 1px solid #333;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5), 0 2px 4px -2px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .search-input:focus-within {
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.5);
+        }
+        .loading-spinner {
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top: 4px solid #4f46e5;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Kontajner pre player, aby bol responsívny */
+        .aspect-video {
+            position: relative;
+            width: 100%;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+        }
+        /* YouTube iframe */
+        #youtubePlayer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        /* Štýlovanie posuvníka hlasitosti a progress baru */
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            background: #4f46e5;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.5);
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 12px;
+            height: 12px;
+            background: #4f46e5;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+    </style>
+    <!-- 1. Načítanie YouTube IFrame API Scriptu (asynchrónne) -->
+    <script async src="https://www.youtube.com/iframe_api"></script>
+</head>
+<body class="p-4">
+
+    <!-- Horný panel s Nastaveniami a Premium Tlačidlom -->
+    <header class="flex justify-end p-4 absolute top-0 right-0 w-full space-x-3">
+        <!-- Tlačidlo Nastavenia -->
+        <button id="settingsBtn" class="bg-gray-700 hover:bg-gray-600 text-white p-2 rounded-lg transition duration-150 shadow-lg">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+        </button>
+        <!-- Tlačidlo Premium (zachované) -->
+        <button id="premiumBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 shadow-lg">
+            Premium
+        </button>
+    </header>
+
+    <!-- Hlavný kontajner obsahu -->
+    <main class="flex-grow flex flex-col items-center justify-start py-8">
+        <div class="search-container">
+            <!-- Názov aplikácie -->
+            <h1 class="text-6xl font-extrabold text-white mb-8 text-center" style="letter-spacing: -2px;">
+                OpenTub <span class="text-indigo-500">Vlastný Prehrávač</span>
+            </h1>
+
+            <!-- Vyhľadávací formulár -->
+            <div class="search-input flex items-center p-2 rounded-full mb-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 ml-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input type="text" id="searchQuery" placeholder="Zadajte, aké video hľadáte..." 
+                       class="flex-grow bg-transparent p-3 text-white focus:outline-none" required>
+                <button onclick="searchVideosByQuery()" id="searchButton" class="bg-indigo-600 hover:bg-indigo-700 text-white p-3 rounded-full transition duration-150">
+                    Hľadať na YouTube
+                </button>
+            </div>
+            
+            <!-- Stav Premium účtu a Správy o vyhľadávaní -->
+            <div id="statusMessage" class="text-center text-sm mb-4 p-3 rounded-lg bg-gray-900 border border-gray-700">
+                Kontrola stavu...
+            </div>
+        </div>
+        
+        <!-- ########################################################### -->
+        <!-- NOVÝ KONTANER PRE VLASTNÝ PREHRÁVAČ VIDEA -->
+        <!-- ########################################################### -->
+        <div id="videoPlaybackSection" class="w-full max-w-4xl px-4 my-8 hidden">
+            <h2 id="videoTitleDisplay" class="text-3xl font-bold text-white mb-4"></h2>
+
+            <div class="aspect-video bg-gray-800 rounded-xl overflow-hidden shadow-2xl relative">
+                <!-- 2. Kontajner pre Vložený YouTube IFrame -->
+                <div id="youtubePlayer">
+                    <!-- Prehrávač sa načíta sem cez YouTube API -->
+                </div>
+                <!-- Prekryvná Vrstva pre Stav Loading -->
+                <div id="playerOverlay" class="absolute inset-0 bg-gray-900 bg-opacity-70 flex flex-col items-center justify-center p-4 transition-opacity duration-300">
+                    <div class="loading-spinner mb-4"></div>
+                    <p class="text-lg text-indigo-400">Načítavam video...</p>
+                    <p class="text-sm text-gray-400 mt-2">Ak sa video nespustí, autor mohol zakázať externé prehrávanie.</p>
+                </div>
+            </div>
+
+            <!-- VLASTNÉ OVLÁDACIE PRVKY PREHRÁVAČA -->
+            <div id="customControls" class="bg-gray-900 p-4 rounded-b-xl shadow-inner mt-[-10px] hidden">
+                <!-- Progress Bar -->
+                <div class="flex items-center space-x-3 mb-3">
+                    <span id="currentTime" class="text-sm text-gray-400">0:00</span>
+                    <input type="range" id="progressBar" min="0" value="0" step="1" 
+                           class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-lg transition-colors duration-200">
+                    <span id="durationTime" class="text-sm text-gray-400">0:00</span>
+                </div>
+
+                <!-- Kontroly (Play/Pause, Hlasitosť) -->
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-4">
+                        <!-- Play/Pause Tlačidlo -->
+                        <button id="playPauseBtn" class="bg-indigo-600 hover:bg-indigo-700 p-3 rounded-full text-white transition duration-150 transform hover:scale-105">
+                            <svg id="playIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                            </svg>
+                            <svg id="pauseIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm1 4a1 1 0 011-1h2a1 1 0 110 2H9a1 1 0 01-1-1z" clip-rule="evenodd" />
+                            </svg>
+                        </button>
+
+                        <!-- Hlasitosť -->
+                        <div class="flex items-center space-x-2">
+                            <button id="muteBtn" class="text-gray-400 hover:text-white transition duration-150">
+                                <svg id="volumeIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.121-7.072a8 8 0 010 11.314m-17.817-6H4a2 2 0 00-2 2v4a2 2 0 002 2h3l3 3V5l-3 3H4z" />
+                                </svg>
+                                <svg id="muteIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a2 2 0 01-2-2v-4a2 2 0 012-2h1.586l3.414-3.414a1 1 0 011.414 0l.086.086a1 1 0 010 1.414L10 8.414l.086.086a1 1 0 010 1.414L10 12.414l.086.086a1 1 0 010 1.414L10 16.414l-.086.086a1 1 0 01-1.414 0L5.586 15z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                            <input type="range" id="volumeSlider" min="0" max="100" value="100" class="w-20 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    </div>
+
+                    <!-- Fullscreen -->
+                    <button id="fullscreenBtn" class="text-gray-400 hover:text-white transition duration-150">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m7-5h4m0 0v4m0-4l-5 5m5 5v4m0 0h-4m0 0l-5-5m5 5l-5-5M4 16v4m0 0h4m0 0l5-5" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <div id="videoDescriptionDisplay" class="mt-4 p-4 bg-gray-900 rounded-xl text-gray-300">
+                <p class="font-semibold text-indigo-400 mb-1">Popis:</p>
+                <p id="videoDescriptionContent">...popis sa zobrazí tu.</p>
+            </div>
+        </div>
+
+        <!-- Kontajner pre výsledky vyhľadávania -->
+        <div id="videoListContainer" class="w-full max-w-4xl px-4">
+            <h2 class="text-2xl font-semibold mb-4 text-center hidden" id="resultTitle">Vyhľadané videá z YouTube (kliknite pre prehranie vo vlastnom prehrávači):</h2>
+            <div id="searchResults" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Video karty sa vložia sem -->
+            </div>
+            <!-- Loading indikátor pre vyhľadávanie -->
+            <div id="searchLoading" class="flex justify-center items-center py-12 hidden">
+                <div class="loading-spinner"></div>
+                <p class="ml-4 text-indigo-400">Vyhľadávam videá na YouTube...</p>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals zostávajú pre Premium a Nastavenia -->
+    <!-- Premium Modal (Simulácia) -->
+    <div id="premiumModal" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 z-50">... [Obsah pre Prémiový Modal] ...</div>
+    <!-- Nastavenia Modal (API Key) -->
+    <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 z-50">
+        <div class="bg-gray-900 rounded-xl shadow-2xl w-full max-w-lg relative p-8">
+            <!-- Tlačidlo Zavrieť -->
+            <button onclick="closeModal('settingsModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white transition duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            
+            <h2 class="text-3xl font-bold text-white mb-6 border-b border-gray-700 pb-2">Nastavenia YouTube API</h2>
+            
+            <form id="apiKeyForm">
+                <div class="mb-4">
+                    <label for="apiKeyInput" class="block text-sm font-medium text-gray-300 mb-2">
+                        YouTube Data API Kľúč
+                    </label>
+                    <input type="text" id="apiKeyInput" placeholder="Zadajte Váš YouTube Data API kľúč..." required 
+                           class="w-full p-3 rounded-lg bg-black border border-gray-700 text-white focus:ring-indigo-500 focus:border-indigo-500">
+                    <p class="mt-2 text-xs text-gray-500">
+                        Kľúč je potrebný pre vyhľadávanie videí na YouTube.
+                    </p>
+                </div>
+                
+                <button type="submit" id="saveApiKeyBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition duration-150 shadow-xl">
+                    Uložiť a Pripojiť
+                </button>
+                <div id="apiKeyStatus" class="mt-4 text-center text-sm text-green-400 hidden">
+                    API kľúč bol úspešne uložený a služba je pripravená.
+                </div>
+            </form>
+        </div>
+    </div>
+    <script>
+        // ######################################################################
+        // # YOUTUBE API A VLASTNÝ PREHRÁVAČ LOGIKA
+        // ######################################################################
+        
+        let player; // Globálna referencia na YouTube IFrame Player API objekt
+        let intervalId; // Referencia na interval pre aktualizáciu progress baru
+
+        /**
+         * 3. Táto funkcia sa automaticky zavolá po načítaní YouTube IFrame API skriptu
+         */
+        window.onYouTubeIframeAPIReady = function() {
+            // Player sa inicializuje až po výbere videa
+        }
+
+        /**
+         * Inicializuje IFrame prehrávač pre zadané video ID
+         */
+        function initializePlayer(videoId) {
+            if (player) {
+                // Ak už hráč existuje, len načíta nové video
+                player.loadVideoById(videoId);
+                return;
+            }
+
+            player = new YT.Player('youtubePlayer', {
+                videoId: videoId,
+                playerVars: {
+                    'controls': 0, // Dôležité: Skryje natívne ovládacie prvky YouTube!
+                    'rel': 0,
+                    'modestbranding': 1,
+                    'iv_load_policy': 3 // Vypne anotácie
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+        
+        /**
+         * Volané, keď je prehrávač pripravený
+         */
+        function onPlayerReady(event) {
+            console.log("YouTube Player Ready.");
+            document.getElementById('playerOverlay').style.opacity = '0';
+            setTimeout(() => { document.getElementById('playerOverlay').style.display = 'none'; }, 300);
+            
+            // Nastaví počiatočné hodnoty a priradí listenery
+            setupCustomControls();
+            
+            // Spustenie videa po načítaní (často nutné pre mobilné zariadenia)
+            event.target.playVideo(); 
+        }
+
+        /**
+         * Volané pri zmene stavu prehrávača (play, pause, stop, buffering...)
+         */
+        function onPlayerStateChange(event) {
+            const playIcon = document.getElementById('playIcon');
+            const pauseIcon = document.getElementById('pauseIcon');
+            
+            // 1: PLAYING, 2: PAUSED, 0: ENDED, 3: BUFFERING
+            if (event.data === YT.PlayerState.PLAYING) {
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
+                startProgressUpdate();
+            } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+                clearInterval(intervalId);
+            } else if (event.data === YT.PlayerState.BUFFERING) {
+                 // Môžeme zobraziť overlay, ak sa dlho načítava, ale necháme to skryté, aby sme neprekrývali.
+            }
+        }
+        
+        /**
+         * Nastaví listenery pre naše vlastné HTML ovládacie prvky
+         */
+        function setupCustomControls() {
+            const playPauseBtn = document.getElementById('playPauseBtn');
+            const volumeSlider = document.getElementById('volumeSlider');
+            const muteBtn = document.getElementById('muteBtn');
+            const progressBar = document.getElementById('progressBar');
+            const duration = player.getDuration();
+            
+            // Zobrazenie celkovej dĺžky
+            document.getElementById('durationTime').textContent = formatTime(duration);
+            progressBar.max = duration;
+
+            // 1. Play/Pause
+            playPauseBtn.onclick = function() {
+                if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+                    player.pauseVideo();
+                } else {
+                    player.playVideo();
+                }
+            };
+            
+            // 2. Hlasitosť
+            volumeSlider.oninput = function() {
+                player.setVolume(this.value);
+                updateMuteIcon(this.value);
+            };
+            
+            // 3. Mute
+            muteBtn.onclick = function() {
+                if (player.isMuted()) {
+                    player.unMute();
+                    updateMuteIcon(player.getVolume());
+                } else {
+                    player.mute();
+                    updateMuteIcon(0);
+                }
+            };
+
+            // 4. Progress Bar (Preskakovanie)
+            progressBar.onchange = function() {
+                player.seekTo(this.value, true);
+            };
+            
+            document.getElementById('customControls').classList.remove('hidden');
+        }
+        
+        /**
+         * Aktualizuje ikonu stlmenia na základe hlasitosti
+         */
+        function updateMuteIcon(volume) {
+            const volumeIcon = document.getElementById('volumeIcon');
+            const muteIcon = document.getElementById('muteIcon');
+            
+            if (player.isMuted() || volume == 0) {
+                volumeIcon.classList.add('hidden');
+                muteIcon.classList.remove('hidden');
+            } else {
+                volumeIcon.classList.remove('hidden');
+                muteIcon.classList.add('hidden');
+            }
+            document.getElementById('volumeSlider').value = volume;
+        }
+
+        /**
+         * Spustí interval pre pravidelnú aktualizáciu progress baru a času
+         */
+        function startProgressUpdate() {
+            if (intervalId) clearInterval(intervalId);
+            
+            intervalId = setInterval(() => {
+                const currentTime = player.getCurrentTime();
+                const duration = player.getDuration();
+                
+                document.getElementById('currentTime').textContent = formatTime(currentTime);
+                document.getElementById('progressBar').value = currentTime;
+
+                // Ak video skončilo, zastavíme interval
+                if (currentTime >= duration) {
+                    clearInterval(intervalId);
+                    document.getElementById('playIcon').classList.remove('hidden');
+                    document.getElementById('pauseIcon').classList.add('hidden');
+                }
+            }, 500); // Aktualizácia každých 0.5 sekundy
+        }
+
+        /**
+         * Formátuje sekundy na minúty:sekundy
+         */
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+        
+        // ######################################################################
+        // # ZVYŠNÉ FUNKCIE (FETCH, UI, STATUS) Z PREDOŠLÉHO KÓDU
+        // ######################################################################
+        
+        const packages = [
+            { id: 1, name: "Základný", basePrice: 9.99, features: ["Štandardná rýchlosť", "HD video", "Základná podpora"] },
+            { id: 2, name: "Štandard", basePrice: 14.99, features: ["Vyššia rýchlosť", "4K video", "Rozšírená podpora"] },
+            { id: 3, name: "Pro", basePrice: 19.99, features: ["Prioritná rýchlosť", "8K video", "Prioritná podpora"] },
+        ];
+        
+        let selectedPackage = null;
+        const API_KEY_STORAGE_KEY = 'youtubeApiKey';
+        const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
+
+        async function fetchWithExponentialBackoff(url, options, maxRetries = 5, delay = 1000) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.ok) return response;
+                    
+                    if (response.status === 401 || response.status === 403) {
+                        const errorData = await response.json();
+                        if (errorData.error && errorData.error.errors && errorData.error.errors[0].reason === 'keyInvalid') {
+                            throw new Error('AUTH_ERROR: Kľúč je neplatný alebo neoprávnený.');
+                        }
+                        if (errorData.error && errorData.error.errors && errorData.error.errors[0].reason === 'forbidden') {
+                             throw new Error('AUTH_ERROR: Kľúč nemá prístup k YouTube Data API. Skontrolujte obmedzenia v GCP.');
+                        }
+                        throw new Error('AUTH_ERROR: Neplatný alebo chýbajúci kľúč/oprávnenie.');
+                    }
+                    if (response.status === 429) { 
+                        if (i < maxRetries - 1) {
+                            console.warn("API limit dosiahnutý, opakujem volanie...");
+                        } else {
+                            throw new Error('RATE_LIMIT_EXCEEDED');
+                        }
+                    }
+
+                } catch (error) {
+                    if (error.message.startsWith('AUTH_ERROR') || error.message === 'RATE_LIMIT_EXCEEDED') throw error; 
+                    console.error("Fetch chyba, opakujem...", error);
+                }
+
+                if (i < maxRetries - 1) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2; 
+                }
+            }
+            throw new Error('API volanie zlyhalo po všetkých opakovaniach.');
+        }
+
+        function getThumbnailUrl(videoId) {
+            return `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`;
+        }
+        
+        function openModal(modalId) {
+            if (modalId === 'settingsModal') {
+                const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+                document.getElementById('apiKeyInput').value = savedKey || '';
+                document.getElementById('apiKeyStatus').classList.add('hidden');
+            }
+            document.getElementById(modalId).classList.remove('hidden');
+            document.getElementById(modalId).classList.add('flex');
+        }
+
+        function closeModal(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+            document.getElementById(modalId).classList.remove('flex');
+            if (modalId === 'premiumModal') {
+                updateStatusDisplay();
+            }
+        }
+        
+        function initializeTrial() { 
+            if (!localStorage.getItem('openTubTrialStart')) {
+                localStorage.setItem('openTubTrialStart', new Date().toISOString());
+                localStorage.setItem('openTubSubscriptionActive', 'false');
+                localStorage.setItem('openTubPremiumPackage', 'Žiadny');
+            }
+        }
+
+        function checkSubscriptionStatus() { 
+            const trialStart = localStorage.getItem('openTubTrialStart');
+            const subActive = localStorage.getItem('openTubSubscriptionActive') === 'true';
+            const packageId = parseInt(localStorage.getItem('openTubPremiumPackageId'));
+            const packageName = localStorage.getItem('openTubPremiumPackage');
+            
+            if (!trialStart) {
+                initializeTrial();
+                return checkSubscriptionStatus();
+            }
+
+            const startDate = new Date(trialStart);
+            const twoYearsInMs = 2 * 365.25 * 24 * 60 * 60 * 1000;
+            const trialEnd = new Date(startDate.getTime() + twoYearsInMs);
+            const now = new Date();
+            const trialExpired = now > trialEnd;
+            const daysLeft = Math.ceil((trialEnd - now) / (1000 * 60 * 60 * 24));
+
+            let status = {
+                active: subActive,
+                trial: !trialExpired && !subActive,
+                expired: trialExpired && !subActive,
+                trialEnd: trialEnd.toLocaleDateString('sk-SK'),
+                daysLeft: daysLeft > 0 ? daysLeft : 0,
+                packageName: packageName,
+                packageId: packageId,
+                isFree: !subActive && !trialExpired
+            };
+
+            return status;
+        }
+
+        function updateStatusDisplay() { 
+            const status = checkSubscriptionStatus();
+            const statusMessage = document.getElementById('statusMessage');
+            
+            let mainText = "";
+            let colorClass = "";
+
+            if (status.active) {
+                mainText = `Aktívne Premium: ${status.packageName}. Užite si neobmedzené vyhľadávanie!`;
+                colorClass = "bg-green-900/30 border-green-500";
+            } else if (status.trial) {
+                mainText = `Aktuálne ste na 2-ročnej bezplatnej skúšobnej verzii. Zostáva: ${status.daysLeft} dní.`;
+                colorClass = "bg-yellow-900/30 border-yellow-500";
+            } else if (status.expired) {
+                mainText = 'Skúšobná verzia vypršala! Pre neobmedzené hľadanie si zakúpte prémiový balíček.';
+                colorClass = "bg-red-900/30 border-red-500";
+            } else {
+                mainText = 'Voľná verzia: Obmedzené vyhľadávanie. Pre neobmedzený prístup zvoľte Premium.';
+                colorClass = "bg-gray-800 border-gray-600";
+            }
+
+            statusMessage.textContent = mainText;
+            statusMessage.className = `text-center text-sm mb-4 p-3 rounded-lg border ${colorClass}`;
+        }
+        
+        async function searchVideosByQuery() {
+            const query = document.getElementById('searchQuery').value.trim();
+            const searchResults = document.getElementById('searchResults');
+            const searchLoading = document.getElementById('searchLoading');
+            const resultTitle = document.getElementById('resultTitle');
+            const statusMessage = document.getElementById('statusMessage');
+
+            searchResults.innerHTML = '';
+            resultTitle.classList.add('hidden');
+            
+            // Skryť prehrávač pred novým hľadaním
+            document.getElementById('videoPlaybackSection').classList.add('hidden'); 
+            clearInterval(intervalId); // Zastaví aktualizáciu progress baru
+
+            document.getElementById('searchButton').disabled = true;
+            searchLoading.classList.remove('hidden');
+
+            const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
+            if (!apiKey) {
+                statusMessage.textContent = 'Chyba: Pre vyhľadávanie zadajte Váš YouTube Data API Kľúč v Nastaveniach.';
+                statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-red-900/30 border-red-500';
+                searchLoading.classList.add('hidden');
+                document.getElementById('searchButton').disabled = false;
+                return;
+            }
+
+            if (!query) {
+                statusMessage.textContent = 'Prosím, zadajte vyhľadávací dotaz.';
+                statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-yellow-900/30 border-yellow-500';
+                searchLoading.classList.add('hidden');
+                document.getElementById('searchButton').disabled = false;
+                return;
+            }
+            
+            const apiUrl = `${YOUTUBE_SEARCH_URL}?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=4&key=${apiKey}`;
+
+            try {
+                const response = await fetchWithExponentialBackoff(apiUrl, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                
+                const result = await response.json();
+                let videoData = [];
+
+                if (result.items && Array.isArray(result.items)) {
+                    videoData = result.items.map(item => ({
+                        id: item.id.videoId,
+                        title: item.snippet.title,
+                        description: item.snippet.description 
+                    }));
+                        
+                    if (videoData.length > 0) {
+                        renderVideoCards(videoData);
+                        statusMessage.textContent = `YouTube našiel a zobrazil ${videoData.length} videá pre dotaz: "${query}". Kliknite pre prehranie.`;
+                        statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-green-900/30 border-green-500';
+                    } else {
+                         statusMessage.textContent = 'YouTube nenašiel žiadne relevantné videá pre tento dotaz. Skúste byť konkrétnejší.';
+                         statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-yellow-900/30 border-yellow-500';
+                    }
+                } else if (result.error) {
+                    statusMessage.textContent = `Chyba YouTube API: ${result.error.message || 'Nepodarilo sa získať výsledky z YouTube API.'}`;
+                    statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-red-900/30 border-red-500';
+                }
+
+            } catch (error) {
+                let errorMessage = `Chyba pri volaní YouTube API: ${error.message}.`;
+                if (error.message.startsWith('AUTH_ERROR')) {
+                    errorMessage = 'Chyba 401/403: Neplatný API kľúč alebo API nie je aktivované pre váš projekt.';
+                } else if (error.message === 'RATE_LIMIT_EXCEEDED') {
+                    errorMessage = 'Chyba 429: Prekročili ste svoju kvótu YouTube API volaní. Skúste to neskôr.';
+                }
+                statusMessage.textContent = errorMessage;
+                statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-red-900/30 border-red-500';
+            } finally {
+                searchLoading.classList.add('hidden');
+                document.getElementById('searchButton').disabled = false;
+            }
+        }
+        
+        function renderVideoCards(videos) {
+            const searchResults = document.getElementById('searchResults');
+            const resultTitle = document.getElementById('resultTitle');
+            searchResults.innerHTML = ''; 
+
+            if (videos.length === 0) return;
+
+            resultTitle.classList.remove('hidden');
+
+            videos.forEach(video => {
+                const videoId = video.id;
+                const thumbnailUrl = videoId ? getThumbnailUrl(videoId) : 'https://placehold.co/480x270/1f2937/d1d5db?text=Nahrane+YouTube';
+                
+                const card = document.createElement('div');
+                card.className = 'bg-gray-900 rounded-xl overflow-hidden shadow-xl hover:shadow-2xl transition duration-300 transform hover:-translate-y-1 cursor-pointer border border-gray-800';
+                
+                // Pri kliknutí sa video načíta do vlastného prehrávača
+                card.onclick = () => loadVideoPlayer(videoId, video.title, video.description);
+
+                card.innerHTML = `
+                    <div class="relative aspect-video bg-gray-800">
+                        <img src="${thumbnailUrl}" onerror="this.onerror=null;this.src='https://placehold.co/480x270/1f2937/d1d5db?text=Nahrane+YouTube';" class="w-full h-full object-cover">
+                        <div class="absolute bottom-0 left-0 bg-black bg-opacity-60 p-2 w-full">
+                            <h3 class="text-lg font-semibold text-white truncate">${video.title || 'Neznámy titul'}</h3>
+                        </div>
+                    </div>
+                    <div class="p-4">
+                        <p class="text-sm text-gray-400 line-clamp-2">${video.description || 'Popis nie je k dispozícii.'}</p>
+                        <button class="mt-3 text-indigo-400 hover:text-indigo-300 text-sm font-medium">
+                            Prehrať vo vlastnom prehrávači &rarr; 
+                        </button>
+                    </div>
+                `;
+                searchResults.appendChild(card);
+            });
+        }
+        
+        /**
+         * Pripraví UI a spustí inicializáciu YouTube IFrame API prehrávača
+         */
+        function loadVideoPlayer(videoId, title, description) {
+            const videoTitleDisplay = document.getElementById('videoTitleDisplay');
+            const videoDescriptionContent = document.getElementById('videoDescriptionContent');
+            const videoPlaybackSection = document.getElementById('videoPlaybackSection');
+            const playerOverlay = document.getElementById('playerOverlay');
+            
+            // Zobrazenie UI
+            videoTitleDisplay.textContent = title;
+            videoDescriptionContent.textContent = description || 'Popis videa nie je k dispozícii.';
+            videoPlaybackSection.classList.remove('hidden');
+            playerOverlay.style.display = 'flex'; // Zobrazíme overlay s Loading spinnerom
+            playerOverlay.style.opacity = '1';
+            
+            // Inicializácia prehrávača cez API
+            initializePlayer(videoId);
+            
+            // Posunutie obrazovky na prehrávač
+            videoPlaybackSection.scrollIntoView({ behavior: 'smooth' });
+        }
+
+
+        // ######################################################################
+        // # INICIALIZÁCIA
+        // ######################################################################
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTrial();
+            updateStatusDisplay();
+            
+            document.getElementById('premiumBtn').addEventListener('click', () => openModal('premiumModal'));
+            document.getElementById('settingsBtn').addEventListener('click', () => openModal('settingsModal'));
+            
+            document.getElementById('apiKeyForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                const apiKeyInput = document.getElementById('apiKeyInput').value.trim();
+                const apiKeyStatus = document.getElementById('apiKeyStatus');
+                
+                if (apiKeyInput) {
+                    localStorage.setItem(API_KEY_STORAGE_KEY, apiKeyInput);
+                    apiKeyStatus.textContent = 'API kľúč bol úspešne uložený a služba je pripravená.';
+                    apiKeyStatus.classList.remove('hidden', 'text-red-400');
+                    apiKeyStatus.classList.add('text-green-400');
+                } else {
+                    localStorage.removeItem(API_KEY_STORAGE_KEY);
+                    apiKeyStatus.textContent = 'Chyba: API kľúč nemôže byť prázdny.';
+                    apiKeyStatus.classList.remove('hidden', 'text-green-400');
+                    apiKeyStatus.classList.add('text-red-400');
+                }
+            });
+            // Ostatné event listenery pre simuláciu platby by boli tu...
+        });
+    </script>
+</body>
+</html>
