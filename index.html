@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenTub: Vlastný YouTube Prehrávač</title>
+    
+    <!-- ****************************************************** -->
+    <!-- Webová Ikona (Favicon) -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='%23FF0000' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z'/></svg>">
+    <!-- ****************************************************** -->
+
     <!-- Načítanie Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
@@ -79,6 +85,36 @@
             border-radius: 50%;
             cursor: pointer;
         }
+
+        /* ****************************************************** */
+        /* CSS pre Fullscreen Režim */
+        /* Element, ktorý vstúpi do fullscreen režimu, musí byť na celej obrazovke */
+        #videoPlaybackSection:fullscreen,
+        #videoPlaybackSection:-webkit-full-screen,
+        #videoPlaybackSection:-moz-full-screen,
+        #videoPlaybackSection:-ms-fullscreen {
+            width: 100vw !important; /* Presvedčte sa, že zaberá celú šírku */
+            height: 100vh !important; /* A celú výšku */
+            max-width: none !important; /* Ignoruje max-width: 4xl */
+            padding: 0;
+            margin: 0;
+            background-color: #000;
+        }
+
+        /* Kontajner pre video (iframe a overlay) v Fullscreen režime */
+        #videoPlaybackSection:fullscreen .aspect-video,
+        #videoPlaybackSection:-webkit-full-screen .aspect-video,
+        #videoPlaybackSection:-moz-full-screen .aspect-video,
+        #videoPlaybackSection:-ms-fullscreen .aspect-video {
+            width: 100vw;
+            height: 100vh;
+            padding-bottom: 0; /* Zruší aspect ratio pre skutočný fullscreen */
+            border-radius: 0;
+        }
+
+        /* Skrytie ostatného UI počas fullscreen režimu pre čistý zážitok */
+        #videoPlaybackSection:fullscreen + * { display: none; }
+        /* ****************************************************** */
     </style>
     <!-- 1. Načítanie YouTube IFrame API Scriptu (asynchrónne) -->
     <script async src="https://www.youtube.com/iframe_api"></script>
@@ -127,7 +163,7 @@
         </div>
         
         <!-- ########################################################### -->
-        <!-- NOVÝ KONTANER PRE VLASTNÝ PREHRÁVAČ VIDEA -->
+        <!-- KONTANER PRE VLASTNÝ PREHRÁVAČ VIDEA (TENTO PRVOK VSTÚPI DO FULLSCREEN) -->
         <!-- ########################################################### -->
         <div id="videoPlaybackSection" class="w-full max-w-4xl px-4 my-8 hidden">
             <h2 id="videoTitleDisplay" class="text-3xl font-bold text-white mb-4"></h2>
@@ -182,10 +218,15 @@
                         </div>
                     </div>
 
-                    <!-- Fullscreen -->
+                    <!-- Fullscreen Tlačidlo -->
                     <button id="fullscreenBtn" class="text-gray-400 hover:text-white transition duration-150">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <!-- Ikona pre vstup do Fullscreen -->
+                        <svg id="fullscreenEnterIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M4 8V4m0 0h4M4 4l5 5m7-5h4m0 0v4m0-4l-5 5m5 5v4m0 0h-4m0 0l-5-5m5 5l-5-5M4 16v4m0 0h4m0 0l5-5" />
+                        </svg>
+                        <!-- Ikona pre ukončenie Fullscreen (skrytá na začiatku) -->
+                        <svg id="fullscreenExitIcon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M8 9H7m5 0h-1m1 0h1m-1 0V8m0 4v1m0 4h-1m1 0h1m-1 0v-1m4-1h-1m1 0h1m-1 0V8m0 4v1m0 4h-1m1 0h1m-1 0v-1M4 12a8 8 0 1116 0 8 8 0 01-16 0z" />
                         </svg>
                     </button>
                 </div>
@@ -213,7 +254,25 @@
 
     <!-- Modals zostávajú pre Premium a Nastavenia -->
     <!-- Premium Modal (Simulácia) -->
-    <div id="premiumModal" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 z-50">... [Obsah pre Prémiový Modal] ...</div>
+    <div id="premiumModal" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 z-50">
+        <!-- Zjednodušený obsah Modalu -->
+        <div class="bg-gray-900 rounded-xl shadow-2xl w-full max-w-lg relative p-8">
+            <button onclick="closeModal('premiumModal')" class="absolute top-4 right-4 text-gray-400 hover:text-white transition duration-150">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <h2 class="text-3xl font-bold text-indigo-400 mb-6 border-b border-gray-700 pb-2">OpenTub Premium</h2>
+            <p class="text-gray-300 mb-6">Pre neobmedzené vyhľadávanie a vyššiu kvalitu videa zvoľte jeden z našich balíčkov:</p>
+            <div id="packageList" class="space-y-4">
+                <!-- Zoznam balíčkov -->
+            </div>
+            <button onclick="closeModal('premiumModal')" class="mt-8 w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded-lg transition duration-150">
+                Zavrieť
+            </button>
+        </div>
+    </div>
+    
     <!-- Nastavenia Modal (API Key) -->
     <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 z-50">
         <div class="bg-gray-900 rounded-xl shadow-2xl w-full max-w-lg relative p-8">
@@ -318,9 +377,7 @@
                 playIcon.classList.remove('hidden');
                 pauseIcon.classList.add('hidden');
                 clearInterval(intervalId);
-            } else if (event.data === YT.PlayerState.BUFFERING) {
-                 // Môžeme zobraziť overlay, ak sa dlho načítava, ale necháme to skryté, aby sme neprekrývali.
-            }
+            } 
         }
         
         /**
@@ -331,6 +388,7 @@
             const volumeSlider = document.getElementById('volumeSlider');
             const muteBtn = document.getElementById('muteBtn');
             const progressBar = document.getElementById('progressBar');
+            const fullscreenBtn = document.getElementById('fullscreenBtn');
             const duration = player.getDuration();
             
             // Zobrazenie celkovej dĺžky
@@ -368,9 +426,79 @@
                 player.seekTo(this.value, true);
             };
             
+            // 5. Fullscreen
+            fullscreenBtn.onclick = toggleFullscreen;
+
+            // Inicializácia ikony a skutočnej hlasitosti
+            updateMuteIcon(player.getVolume());
+            volumeSlider.value = player.getVolume();
+            
             document.getElementById('customControls').classList.remove('hidden');
         }
         
+        /**
+         * Prepneme do Fullscreen režimu alebo z neho vystúpime
+         */
+        function toggleFullscreen() {
+            const videoContainer = document.getElementById('videoPlaybackSection');
+            
+            // Zistíme, či sme už v Fullscreen režime
+            const isFullscreen = document.fullscreenElement || 
+                                 document.webkitFullscreenElement || 
+                                 document.mozFullScreenElement || 
+                                 document.msFullscreenElement;
+
+            if (isFullscreen) {
+                // Ukončenie Fullscreen
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { // Safari
+                    document.webkitExitFullscreen();
+                } else if (document.mozCancelFullScreen) { // Firefox
+                    document.mozCancelFullScreen();
+                } else if (document.msExitFullscreen) { // IE/Edge
+                    document.msExitFullscreen();
+                }
+            } else {
+                // Vstup do Fullscreen
+                if (videoContainer.requestFullscreen) {
+                    videoContainer.requestFullscreen();
+                } else if (videoContainer.webkitRequestFullscreen) { // Safari
+                    videoContainer.webkitRequestFullscreen();
+                } else if (videoContainer.mozRequestFullScreen) { // Firefox
+                    videoContainer.mozRequestFullScreen();
+                } else if (videoContainer.msRequestFullscreen) { // IE/Edge
+                    videoContainer.msRequestFullscreen();
+                }
+            }
+        }
+        
+        /**
+         * Listener pre zmenu stavu Fullscreen API, aktualizuje ikonu
+         */
+        document.addEventListener('fullscreenchange', updateFullscreenIcon);
+        document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
+        document.addEventListener('mozfullscreenchange', updateFullscreenIcon);
+        document.addEventListener('MSFullscreenChange', updateFullscreenIcon);
+        
+        function updateFullscreenIcon() {
+            const enterIcon = document.getElementById('fullscreenEnterIcon');
+            const exitIcon = document.getElementById('fullscreenExitIcon');
+            
+            const isFullscreen = document.fullscreenElement || 
+                                 document.webkitFullscreenElement || 
+                                 document.mozFullScreenElement || 
+                                 document.msFullscreenElement;
+
+            if (isFullscreen) {
+                enterIcon.classList.add('hidden');
+                exitIcon.classList.remove('hidden');
+            } else {
+                enterIcon.classList.remove('hidden');
+                exitIcon.classList.add('hidden');
+            }
+        }
+
         /**
          * Aktualizuje ikonu stlmenia na základe hlasitosti
          */
@@ -395,6 +523,13 @@
             if (intervalId) clearInterval(intervalId);
             
             intervalId = setInterval(() => {
+                // Kontrola existencie prehrávača a stavu pred volaním metód
+                if (!player || typeof player.getCurrentTime !== 'function' || player.getPlayerState() !== YT.PlayerState.PLAYING) {
+                     // Ak prehrávač nebeží alebo neexistuje, interval zastavíme
+                     clearInterval(intervalId); 
+                     return;
+                }
+                
                 const currentTime = player.getCurrentTime();
                 const duration = player.getDuration();
                 
@@ -433,6 +568,7 @@
         const API_KEY_STORAGE_KEY = 'youtubeApiKey';
         const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
 
+        // Funkcia na obsluhu volaní API s exponenciálnym backoffom
         async function fetchWithExponentialBackoff(url, options, maxRetries = 5, delay = 1000) {
             for (let i = 0; i < maxRetries; i++) {
                 try {
@@ -479,6 +615,8 @@
                 const savedKey = localStorage.getItem(API_KEY_STORAGE_KEY);
                 document.getElementById('apiKeyInput').value = savedKey || '';
                 document.getElementById('apiKeyStatus').classList.add('hidden');
+            } else if (modalId === 'premiumModal') {
+                renderPackages();
             }
             document.getElementById(modalId).classList.remove('hidden');
             document.getElementById(modalId).classList.add('flex');
@@ -557,6 +695,47 @@
             statusMessage.className = `text-center text-sm mb-4 p-3 rounded-lg border ${colorClass}`;
         }
         
+        function renderPackages() {
+            const packageList = document.getElementById('packageList');
+            packageList.innerHTML = '';
+            const currentPackageId = parseInt(localStorage.getItem('openTubPremiumPackageId'));
+
+            packages.forEach(pkg => {
+                const isSelected = currentPackageId === pkg.id;
+                const card = document.createElement('div');
+                card.className = `p-5 rounded-xl border-2 cursor-pointer transition duration-300 ${isSelected ? 'border-indigo-500 bg-indigo-900/20' : 'border-gray-700 hover:border-indigo-500 bg-gray-800'}`;
+                card.onclick = () => selectPackage(pkg);
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-xl font-bold text-white">${pkg.name}</h3>
+                        <span class="text-2xl font-extrabold text-indigo-400">${pkg.basePrice.toFixed(2)}€ / mesiac</span>
+                    </div>
+                    <ul class="text-sm text-gray-400 space-y-1">
+                        ${pkg.features.map(f => `<li class="flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg> ${f}</li>`).join('')}
+                    </ul>
+                    ${isSelected ? '<p class="mt-3 text-sm text-center font-semibold text-green-400">Aktuálne Váš balíček</p>' : '<p class="mt-3 text-sm text-center font-semibold text-gray-400">Kliknite pre výber</p>'}
+                `;
+                packageList.appendChild(card);
+            });
+        }
+        
+        function selectPackage(pkg) {
+            localStorage.setItem('openTubSubscriptionActive', 'true');
+            localStorage.setItem('openTubPremiumPackageId', pkg.id);
+            localStorage.setItem('openTubPremiumPackage', pkg.name);
+            renderPackages(); // Prekreslenie pre zobrazenie stavu
+            
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.textContent = `Gratulujeme! Aktivovali ste balíček ${pkg.name}.`;
+            statusMessage.className = 'text-center text-sm mb-4 p-3 rounded-lg border bg-green-900/30 border-green-500';
+            
+            // Simulácia oneskorenia a zatvorenia modalu
+            setTimeout(() => {
+                closeModal('premiumModal');
+            }, 1000);
+        }
+
         async function searchVideosByQuery() {
             const query = document.getElementById('searchQuery').value.trim();
             const searchResults = document.getElementById('searchResults');
@@ -591,7 +770,9 @@
                 return;
             }
             
-            const apiUrl = `${YOUTUBE_SEARCH_URL}?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=4&key=${apiKey}`;
+            // V prípade Premium môžeme zvýšiť maxResults, ale pre Demo to necháme na 4.
+            const maxResults = 4;
+            const apiUrl = `${YOUTUBE_SEARCH_URL}?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=${maxResults}&key=${apiKey}`;
 
             try {
                 const response = await fetchWithExponentialBackoff(apiUrl, {
@@ -726,7 +907,6 @@
                     apiKeyStatus.classList.add('text-red-400');
                 }
             });
-            // Ostatné event listenery pre simuláciu platby by boli tu...
         });
     </script>
 </body>
