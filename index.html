@@ -88,14 +88,13 @@
 
         /* ****************************************************** */
         /* CSS pre Fullscreen Režim */
-        /* Element, ktorý vstúpi do fullscreen režimu, musí byť na celej obrazovke */
         #videoPlaybackSection:fullscreen,
         #videoPlaybackSection:-webkit-full-screen,
         #videoPlaybackSection:-moz-full-screen,
         #videoPlaybackSection:-ms-fullscreen {
-            width: 100vw !important; /* Presvedčte sa, že zaberá celú šírku */
-            height: 100vh !important; /* A celú výšku */
-            max-width: none !important; /* Ignoruje max-width: 4xl */
+            width: 100vw !important;
+            height: 100vh !important;
+            max-width: none !important;
             padding: 0;
             margin: 0;
             background-color: #000;
@@ -108,7 +107,7 @@
         #videoPlaybackSection:-ms-fullscreen .aspect-video {
             width: 100vw;
             height: 100vh;
-            padding-bottom: 0; /* Zruší aspect ratio pre skutočný fullscreen */
+            padding-bottom: 0;
             border-radius: 0;
         }
 
@@ -191,7 +190,7 @@
                     <span id="durationTime" class="text-sm text-gray-400">0:00</span>
                 </div>
 
-                <!-- Kontroly (Play/Pause, Hlasitosť) -->
+                <!-- Kontroly (Play/Pause, Hlasitosť, Fullscreen) -->
                 <div class="flex items-center justify-between">
                     <div class="flex items-center space-x-4">
                         <!-- Play/Pause Tlačidlo -->
@@ -232,6 +231,28 @@
                 </div>
             </div>
 
+            <!-- NOVÁ SEKCIA: DETAILY VIDEA (KANÁL, ZHILADNUTIA, ODBERY) -->
+            <div id="videoDetailsSection" class="mt-4 p-4 bg-gray-900 rounded-xl shadow-xl border border-gray-800">
+                <div class="flex items-center justify-between flex-wrap mb-3 border-b border-gray-800 pb-2">
+                    <h3 class="text-xl font-bold text-indigo-400" id="channelNameDisplay">
+                        Načítavam meno kanála...
+                    </h3>
+                    <p id="subCountDisplay" class="text-sm font-semibold text-gray-400">
+                        Odberatelia: <span class="text-white" id="subscriberCount">Načítavam...</span>
+                    </p>
+                </div>
+                
+                <p class="text-base text-gray-300">
+                    Zhliadnutí: <span class="font-bold text-white" id="viewCountDisplay">Načítavam štatistiky...</span>
+                </p>
+                <div id="statisticsLoading" class="flex items-center text-sm text-indigo-400 mt-2 hidden">
+                    <div class="loading-spinner h-4 w-4 mr-2 border-2"></div>
+                    Načítavam štatistiky videa...
+                </div>
+
+            </div>
+            
+            <!-- POPIS VIDEA -->
             <div id="videoDescriptionDisplay" class="mt-4 p-4 bg-gray-900 rounded-xl text-gray-300">
                 <p class="font-semibold text-indigo-400 mb-1">Popis:</p>
                 <p id="videoDescriptionContent">...popis sa zobrazí tu.</p>
@@ -252,7 +273,7 @@
         </div>
     </main>
 
-    <!-- Modals zostávajú pre Premium a Nastavenia -->
+    <!-- Modals zostávajú pre Premium a Nastavenia (nemenné) -->
     <!-- Premium Modal (Simulácia) -->
     <div id="premiumModal" class="fixed inset-0 bg-black bg-opacity-80 hidden items-center justify-center p-4 z-50">
         <!-- Zjednodušený obsah Modalu -->
@@ -554,6 +575,14 @@
             return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
         }
         
+        /**
+         * Formátuje veľké čísla do lokálneho formátu (napr. 1234567 -> 1 234 567)
+         */
+        function formatNumber(num) {
+            if (num === undefined || num === null) return 'N/A';
+            return new Intl.NumberFormat('sk-SK').format(num);
+        }
+
         // ######################################################################
         // # ZVYŠNÉ FUNKCIE (FETCH, UI, STATUS) Z PREDOŠLÉHO KÓDU
         // ######################################################################
@@ -567,6 +596,8 @@
         let selectedPackage = null;
         const API_KEY_STORAGE_KEY = 'youtubeApiKey';
         const YOUTUBE_SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search';
+        const YOUTUBE_VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos';
+        const YOUTUBE_CHANNELS_URL = 'https://www.googleapis.com/youtube/v3/channels';
 
         // Funkcia na obsluhu volaní API s exponenciálnym backoffom
         async function fetchWithExponentialBackoff(url, options, maxRetries = 5, delay = 1000) {
@@ -770,7 +801,7 @@
                 return;
             }
             
-            // V prípade Premium môžeme zvýšiť maxResults, ale pre Demo to necháme na 4.
+            // Search API volanie
             const maxResults = 4;
             const apiUrl = `${YOUTUBE_SEARCH_URL}?part=snippet&q=${encodeURIComponent(query)}&type=video&maxResults=${maxResults}&key=${apiKey}`;
 
@@ -787,7 +818,9 @@
                     videoData = result.items.map(item => ({
                         id: item.id.videoId,
                         title: item.snippet.title,
-                        description: item.snippet.description 
+                        description: item.snippet.description,
+                        channelId: item.snippet.channelId, // Dôležité: Načítať channelId pre volanie /channels
+                        channelTitle: item.snippet.channelTitle // Dôležité: Načítať channelTitle
                     }));
                         
                     if (videoData.length > 0) {
@@ -835,7 +868,8 @@
                 card.className = 'bg-gray-900 rounded-xl overflow-hidden shadow-xl hover:shadow-2xl transition duration-300 transform hover:-translate-y-1 cursor-pointer border border-gray-800';
                 
                 // Pri kliknutí sa video načíta do vlastného prehrávača
-                card.onclick = () => loadVideoPlayer(videoId, video.title, video.description);
+                // Odovzdávame všetky dôležité detaily, vrátane channelId
+                card.onclick = () => loadVideoPlayer(videoId, video.title, video.description, video.channelId, video.channelTitle);
 
                 card.innerHTML = `
                     <div class="relative aspect-video bg-gray-800">
@@ -846,6 +880,7 @@
                     </div>
                     <div class="p-4">
                         <p class="text-sm text-gray-400 line-clamp-2">${video.description || 'Popis nie je k dispozícii.'}</p>
+                        <p class="text-xs text-indigo-400 font-medium mt-1">Kanál: ${video.channelTitle || 'Neznámy kanál'}</p>
                         <button class="mt-3 text-indigo-400 hover:text-indigo-300 text-sm font-medium">
                             Prehrať vo vlastnom prehrávači &rarr; 
                         </button>
@@ -856,23 +891,98 @@
         }
         
         /**
+         * Načíta štatistiky videa (zhliadnutia)
+         */
+        async function fetchVideoStatistics(videoId, apiKey) {
+             const apiUrl = `${YOUTUBE_VIDEOS_URL}?part=statistics&id=${videoId}&key=${apiKey}`;
+             try {
+                const response = await fetchWithExponentialBackoff(apiUrl, { method: 'GET' });
+                const data = await response.json();
+                if (data.items && data.items.length > 0) {
+                    return data.items[0].statistics;
+                }
+                return null;
+             } catch (error) {
+                console.error("Chyba pri získavaní štatistík videa:", error);
+                return null;
+             }
+        }
+        
+        /**
+         * Načíta štatistiky kanála (odbery)
+         */
+        async function fetchChannelDetails(channelId, apiKey) {
+             const apiUrl = `${YOUTUBE_CHANNELS_URL}?part=statistics&id=${channelId}&key=${apiKey}`;
+             try {
+                const response = await fetchWithExponentialBackoff(apiUrl, { method: 'GET' });
+                const data = await response.json();
+                if (data.items && data.items.length > 0) {
+                    return data.items[0].statistics;
+                }
+                return null;
+             } catch (error) {
+                console.error("Chyba pri získavaní detailov kanála:", error);
+                return null;
+             }
+        }
+
+        /**
          * Pripraví UI a spustí inicializáciu YouTube IFrame API prehrávača
          */
-        function loadVideoPlayer(videoId, title, description) {
+        function loadVideoPlayer(videoId, title, description, channelId, channelTitle) {
             const videoTitleDisplay = document.getElementById('videoTitleDisplay');
             const videoDescriptionContent = document.getElementById('videoDescriptionContent');
             const videoPlaybackSection = document.getElementById('videoPlaybackSection');
             const playerOverlay = document.getElementById('playerOverlay');
+            const channelNameDisplay = document.getElementById('channelNameDisplay');
+            const viewCountDisplay = document.getElementById('viewCountDisplay');
+            const subscriberCount = document.getElementById('subscriberCount');
+            const statisticsLoading = document.getElementById('statisticsLoading');
+            const apiKey = localStorage.getItem(API_KEY_STORAGE_KEY);
             
             // Zobrazenie UI
             videoTitleDisplay.textContent = title;
             videoDescriptionContent.textContent = description || 'Popis videa nie je k dispozícii.';
+            channelNameDisplay.textContent = channelTitle || 'Neznámy kanál';
             videoPlaybackSection.classList.remove('hidden');
             playerOverlay.style.display = 'flex'; // Zobrazíme overlay s Loading spinnerom
             playerOverlay.style.opacity = '1';
             
-            // Inicializácia prehrávača cez API
+            // Resetovanie štatistík a zobrazenie loading spinnera
+            viewCountDisplay.textContent = 'Načítavam...';
+            subscriberCount.textContent = 'Načítavam...';
+            statisticsLoading.classList.remove('hidden');
+            
+            // 1. Inicializácia prehrávača cez API
             initializePlayer(videoId);
+            
+            // 2. Načítanie štatistík
+            if (apiKey) {
+                
+                // Načítanie zhliadnutí
+                fetchVideoStatistics(videoId, apiKey).then(stats => {
+                    if (stats && stats.viewCount) {
+                        viewCountDisplay.textContent = formatNumber(stats.viewCount);
+                    } else {
+                        viewCountDisplay.textContent = 'Štatistiky zhliadnutí nie sú dostupné.';
+                    }
+                });
+
+                // Načítanie odberateľov
+                fetchChannelDetails(channelId, apiKey).then(stats => {
+                    statisticsLoading.classList.add('hidden');
+                    if (stats && stats.subscriberCount) {
+                        // YouTube často vracia subscriberCount iba pre kanály, ktoré ich nezakázali
+                        subscriberCount.textContent = formatNumber(stats.subscriberCount);
+                    } else {
+                         subscriberCount.textContent = 'N/A (Súkromné alebo nezistené)';
+                    }
+                });
+            } else {
+                statisticsLoading.classList.add('hidden');
+                viewCountDisplay.textContent = 'Pre štatistiky musíte zadať API kľúč!';
+                subscriberCount.textContent = 'N/A';
+            }
             
             // Posunutie obrazovky na prehrávač
             videoPlaybackSection.scrollIntoView({ behavior: 'smooth' });
@@ -911,3 +1021,4 @@
     </script>
 </body>
 </html>
+
